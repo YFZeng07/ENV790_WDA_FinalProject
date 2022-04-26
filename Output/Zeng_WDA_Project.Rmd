@@ -29,6 +29,7 @@ library(sf)
 library(nhdplusTools)
 library(viridis)
 library(knitr)
+library(pander)
 
 # Set your ggplot theme
 MyTheme <- theme_bw(base_size = 14) +
@@ -38,12 +39,13 @@ MyTheme <- theme_bw(base_size = 14) +
 
 # Load your datasets
 #Lower Roanoke River Basin map
-LRB <- st_read("./Data/Basin_shp/Lower_Roanoke_River_Basin.shp")
+LRB <- st_read("../Data/Basin_shp/Lower_Roanoke_River_Basin.shp")
 
 #Import the Roanoke River mainstem flowline
 #Set Gage1 as the start point
-start_point <- st_sfc(st_point(c(Flood_df$dec_long_va[1], 
-                                 Flood_df$dec_lat_va[1])), 
+Gage1_info <- readNWISsite("02080500")[,c(1:3, 7:8)]
+start_point <- st_sfc(st_point(c(Gage1_info$dec_long_va, 
+                                 Gage1_info$dec_lat_va)), 
                       crs = 4269)
 start_comid <- discover_nhdplus_id(start_point)
 
@@ -103,11 +105,17 @@ Gage8_info <- readNWISsite("0208114150")[,c(1:3, 7:8)]
 Info_df <- rbind(Gage1_info, Gage2_info, Gage3_info, Gage4_info,
                  Gage5_info, Gage6_info, Gage7_info, Gage8_info)
 
+#Create gage location sf 
+Gage_sf <- st_as_sf(Info_df, 
+                  coords = c("dec_long_va", "dec_lat_va"),
+                  crs = 4269)
+
 ```
 
 ```{r Table 1, echo = FALSE}
 
-knitr::kable(Info_df, caption = "The 8 USGS gages on the Lower Roanoke River")
+knitr::kable(Info_df, col.names = c('Agency', 'Gage ID', 'Gage Name', 'Latitude', 'Longitude'), 
+             caption = "Table 1. The 8 USGS gages on the Lower Roanoke River")
 
 ```
 
@@ -115,7 +123,7 @@ knitr::kable(Info_df, caption = "The 8 USGS gages on the Lower Roanoke River")
 #Map study area 
 ggplot() +
   geom_sf(data = LRB) +
-  geom_sf(data = Flood_sf, size = 2) +
+  geom_sf(data = Gage_sf, size = 2) +
   geom_sf(data = flowline) +
   MyTheme
 
@@ -345,26 +353,30 @@ Gage8_plot <- ggplot(Gage8, aes(x = Date)) +
 
 ```
 
-```{r Figure 2, echo = FALSE, fig.cap = "The water height changes during the flood event at each gages"}
+```{r Figure 2.1, echo = FALSE, warning = FALSE, fig.cap = "The water height changes during the flood event at Gage 1-4"}
 
-#Combine the plots
+#Combine the plots: Gage 1-4
 ggarrange(Gage1_plot, Gage2_plot, Gage3_plot, Gage4_plot, 
-          Gage5_plot, Gage6_plot, Gage7_plot, Gage8_plot,
-          ncol = 4, nrow = 2)
+          ncol = 2, nrow = 2)
+
 
 ```
 
+```{r Figure 2.2, echo = FALSE, warning = FALSE, fig.cap = "The water height changes during the flood event at Gage 5-8"}
+
+#Gage 5-8
+ggarrange(Gage5_plot, Gage6_plot, Gage7_plot, Gage8_plot,
+          ncol = 2, nrow = 2)
+
+```
 
 \newpage
 
 # Analysis
 
+The flooding hydrology of this flood event on the Lower Roanoke River was characterized by 3 values: flood duration, water height change rate, and flood peak moving speed. I defined the start date as the first day the water height started to increase, and the end date as the last day the water height decreased after the pulse. The flood duration was determined by the day difference between the start date and the end date. Then, I selected the maximum water level and the lowest water level (normally the first day) during the flooding period and calculated the water height change rate as (maximum level – minimum level)/minimum level. The day with the maximum water height was considered as the flood peak date, and the flood peak day difference at each gage along the river was analyzed. The results were visualized on maps by color gradients. 
 
-
-## Question 1: <insert specific question here and add additional subsections for additional questions below, if needed>
-
-## Question 2: 
-
+ 
 ```{r analysis, include = FALSE}
 
 #Gage 1 ==================================
@@ -626,19 +638,119 @@ Info_df <- rbind(Gage1_info, Gage2_info, Gage3_info, Gage4_info,
 #Combine gage information and flood information
 Flood_df <- cbind(Info_df, Summary_df)
 
+#Convert the summary dataframe to sf
+Flood_sf <- st_as_sf(Flood_df, 
+                  coords = c("dec_long_va", "dec_lat_va"),
+                  crs = 4269)
+
+#A function to transfer date class for plotting
+trans_date <- function(x){
+  format(as.Date(x, origin = '1970-01-01'), format = '%m/%d')
+}
 
 ```
 
 
-```{r Table 2, echo = FALSE}
+```{r Table 2, echo = FALSE, warning = FALSE}
 
-knitr::kable(Info_df, caption = "The 8 USGS gages on the Lower Roanoke River")
+pander(Flood_df, col.names = c('Agency', 'Gage ID', 'Gage Name', 'Latitude', 'Longitude', 'Start date', 'End date', 'Peak date', 'Duration', 'Water level increase rate'), 
+       caption = "Table 2. The hydrological characteristics at the 8 USGS gages on the Lower Roanoke River")
 
 ```
+
+```{r Figure 3, echo = FALSE, warning = FALSE, fig.cap = "The start date of the flood event at each gages."}
+
+#Start date
+ggplot() +
+  geom_sf(data = LRB, fill = "white") +
+  geom_sf(data = flowline) +
+  geom_sf(data = Flood_sf, aes(col = as.integer(Start)), size = 4) +
+  scale_color_gradient(low = "#48CAE4", high = "#030451",
+                       labels = trans_date) +
+  labs(color = "Start date") +
+  theme_bw(base_size = 14) +
+  theme(axis.text = element_text(color = "black"),
+        legend.position = "top",
+        legend.key.width = unit(1.5, 'cm'))
+
+```
+
+```{r Figure 4, echo = FALSE, fig.cap = "The end date of the flood event at each gages."}
+
+#End date
+ggplot() +
+  geom_sf(data = LRB, fill = "white") +
+  geom_sf(data = flowline) +
+  geom_sf(data = Flood_sf, aes(col = as.integer(End)), size = 4) +
+  scale_color_gradient(low = "#48CAE4", high = "#030451",
+                       labels = trans_date) +
+  labs(color = "End date") +
+  theme_bw(base_size = 14) +
+  theme(axis.text = element_text(color = "black"),
+        legend.position = "top",
+        legend.key.width = unit(1.5, 'cm'))
+
+```
+
+```{r Figure 5, echo = FALSE, fig.cap = "The peak date of the flood event at each gages."}
+
+#Peak date
+ggplot() +
+  geom_sf(data = LRB, fill = "white") +
+  geom_sf(data = flowline) +
+  geom_sf(data = Flood_sf, aes(col = as.integer(Peak)), size = 4) +
+  scale_color_gradient(low = "#48CAE4", high = "#030451",
+                       labels = trans_date) +
+  labs(color = "Peak date") +
+  theme_bw(base_size = 14) +
+  theme(axis.text = element_text(color = "black"),
+        legend.position = "top",
+        legend.key.width = unit(1.5, 'cm'))
+
+```
+
+
+```{r Figure 6, echo = FALSE, fig.cap = "The duration of the flood event at each gages."}
+
+#Duration 
+ggplot() +
+  geom_sf(data = LRB, fill = "white") +
+  geom_sf(data = flowline) +
+  geom_sf(data = Flood_sf, aes(col = Duration), size = 4) +
+  scale_color_gradient(low = "#48CAE4", high = "#030451") +
+  labs(color = "Duration (days)") +
+  MyTheme
+
+```
+
+```{r Figure 7, echo = FALSE, fig.cap = "The water level increase rate of the flood event at each gages."}
+
+#Increase rate
+ggplot() +
+  geom_sf(data = LRB, fill = "white") +
+  geom_sf(data = flowline) +
+  geom_sf(data = Flood_sf, aes(col = IncreasedPercent), size = 4) +
+  scale_color_gradient(low = "#48CAE4", high = "#030451") +
+  labs(color = "Increase rate") +
+  theme_bw(base_size = 14) +
+  theme(axis.text = element_text(color = "black"),
+        legend.position = "top",
+        legend.key.width = unit(1, 'cm'))
+
+```
+
 
 \newpage
 
 # Summary and Conclusions
+
+The flood duration ranged between 35 and 40 days at the 8 gages along the river. There was not much spatial trend on flood duration. Except for the most downstream Gage 8, the flood duration of the other gages was 39 or 40 days. This indicated that there was no discernible spatial difference in duration along the river as the flood flowed downstream. By the time it reached the most downstream, much of the water might have been consumed, so the length of the flood at the most downstream gage was significantly shorter.
+
+Although the peak dates were close, the flood start and end dates varied at each gage. The flooding period at the most downstream site (Gage 8) was 15 days later than the most upstream gage at the dam (Gage 1), and the second-to-last downstream point (Gage 7) also had a 5-day lag. It took about 5 days for the water to flow from the upstream to the downstream, meaning that the downstream should expect the flood to arrive 5 days after the dam discharging started.
+
+During a flood event, water level increase rates were high upstream and downstream, but low in the middle of the basin. The most upstream gage at the dam had the highest water level increase of 115%, while the lowest increase rate on the river was only 21% at Gage 6. The water level in the upper and lower reaches had increased by about 70% or more, while in the middle river there was only about 45% or less. This might be due to the narrow channels in the upper and lower reaches, with wide channels and broad floodplains in the middle basin. In fact, a lower water level increase rate might mean more overbank flow and more severe flooding.
+
+In conclusion, for the flood event in March 2019, the duration at different locations along the river was similar, while there was about a 5-day lag of the flooding period from upstream to downstream. The water level increased more in the most upstream and downstream areas, and less in the middle basin. This study deepened the understanding of flooding hydrology on the Lower Roanoke River and could serve as a reference for future flood prevention and control.
 
 
 \newpage
